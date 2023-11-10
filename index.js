@@ -1,8 +1,13 @@
 require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
+const cron = require('node-cron')
 const mysql = require('mysql2');
 const app = express();
+
 const PORT = process.env.PORT;
+
+app.use(cors());
 
 //Our Database Config
 const DB_HOST = process.env.DB_HOST;
@@ -27,7 +32,7 @@ db.connect((err) => {
 });
 
 
-app.get('/daily_question', function (req, res) {
+app.get('/daily_questions', function (req, res) {
     const query = "SELECT * FROM daily_question";
     db.query(query, (error, results) => {
     if (error) {
@@ -37,6 +42,35 @@ app.get('/daily_question', function (req, res) {
     }
     res.status(200).json(results);
   });
+});
+
+
+let randomInt = -1;
+cron.schedule('15,20,21,25,30 * * * *' , ()=>{
+  const query = "SELECT COUNT(*) AS nbQuestions FROM daily_question";
+  db.query(query, (error, results) => {
+    if(error){
+        console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+        return;
+    }
+    const totalQuestions = results[0].nbQuestions;
+    randomInt = Math.floor(Math.random() * totalQuestions + 1);
+    console.log("back randomint :" , randomInt);
+  })
+})
+
+console.log("back randomint currently used:" , randomInt);
+
+app.get('/daily_question', function (req, res) {
+  const query = `SELECT * FROM daily_question WHERE id=${randomInt}`;
+  db.query(query, (error, results) => {
+  if (error) {
+    console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+    res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+    return;
+  }
+  res.status(200).json(results);
+});
 });
 
 app.listen(PORT, function() {
