@@ -8,6 +8,7 @@ const app = express();
 const PORT = process.env.PORT;
 
 app.use(cors());
+app.use(express.json());
 
 //Our Database Config
 const DB_HOST = process.env.DB_HOST;
@@ -72,6 +73,28 @@ app.get('/daily_question', function (req, res) {
   res.status(200).json(results);
 });
 });
+
+/* Login & Sign up */
+
+app.post('/signup', function(req, res) {
+  console.log("côté back c'est rentré");
+  if (!req.body) {
+    res.status(400).json({ error: 'Le corps de la requête est vide.' });
+    return;
+  }
+  const query = "INSERT INTO user (last_name, first_name ,email, password) VALUES (?, ?, ?, ?)"
+  const values = [req.body.last_name, req.body.first_name, req.body.email, req.body.password];
+
+  db.query(query, values, (error, results) => {
+    if (error) {
+      console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+      res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+      return;
+    }
+    res.status(200).json(results);
+  });
+})
+
 
 app.listen(PORT, function() {
     console.log('Restful API is running on PORT 3000');
