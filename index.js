@@ -77,9 +77,8 @@ app.get('/daily_question', function (req, res) {
 /* Login & Sign up */
 
 app.post('/signup', function(req, res) {
-  console.log("côté back c'est rentré");
   if (!req.body) {
-    res.status(400).json({ error: 'Le corps de la requête est vide.' });
+    res.status(400).json({ error: 'Empty body.' });
     return;
   }
   const query = "INSERT INTO user (last_name, first_name ,email, password) VALUES (?, ?, ?, ?)"
@@ -94,6 +93,32 @@ app.post('/signup', function(req, res) {
     res.status(200).json(results);
   });
 })
+
+
+app.post('/login', function(req, res) {
+
+  if (!req.body || !req.body.email || !req.body.password) {
+    res.status(400).json({ error: 'Missing email or password.' });
+    return;
+  }
+
+  const email = req.body.email;
+  const password = req.body.password;
+  const query = "SELECT * FROM user WHERE email = ? AND password = ?"
+  db.query(query, [email, password], (error, result) => {
+    if(error) {
+      console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+      res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+      return;
+    }
+    if(result.length > 0){
+      res.send(result);
+    }
+    else{
+      res.status(401).json({error : 'Wrong username/password combination'});
+    }
+  })
+});
 
 
 app.listen(PORT, function() {
