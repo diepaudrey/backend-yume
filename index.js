@@ -7,7 +7,7 @@ const app = express();
 const bcrypt = require('bcrypt');
 const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
-const session = require('express-session');
+const jwt = require('jsonwebtoken');
 
 const PORT = process.env.PORT;
 
@@ -19,17 +19,6 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use (
-  session ({
-      key: "userId",
-      secret: "subscribe",
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-          expires: 60 * 60 * 24,
-      },
-  })
-);
 
 //Our Database Config
 const DB_HOST = process.env.DB_HOST;
@@ -106,9 +95,6 @@ app.post('/signup', function(req, res) {
   }
 
 
-  const query = "INSERT INTO user (last_name, first_name ,email, password) VALUES (?, ?, ?, ?)"
-  const values = [req.body.last_name, req.body.first_name, req.body.email, req.body.password];
-
   bcrypt.hash(req.body.password, saltRound, (error,hash)=>{
     if(error){
       console.log(error)
@@ -127,8 +113,33 @@ app.post('/signup', function(req, res) {
   })
 })
 
+/* ------------- JWT AUTH ---------------*/
 
-app.post('/login', function(req, res) {
+const verifyJWT = (req, res, next) => {
+  const token = req.headers["x-access-token"]; 
+
+  if(!token){
+    res.status(401).json({ message: 'Access token required' });
+  } else{
+    jwt.verify(token, "jwtSecret", (err, decoded)=>{
+      if(err){
+        console.log(err);
+        res.status(403).json({auth : false, message :" You failed to authenticate"});
+      }else{
+        req.userId = decoded.id; //ICI ??? userId ???
+        next();
+      }
+    })
+  }
+}
+
+app.get('/isUserAuth', verifyJWT, (req, res) => {
+  res.send("You are authenticated ! ");
+})
+
+
+
+app.post('/login', (req, res) => {
 
   if (!req.body || !req.body.email || !req.body.password) {
     res.status(400).json({ error: 'Missing email or password.' });
@@ -137,54 +148,67 @@ app.post('/login', function(req, res) {
 
   const email = req.body.email;
   const password = req.body.password;
-  // const query = "SELECT * FROM user WHERE email = ? AND password = ?"
   
   db.execute("SELECT * FROM user WHERE email = ?", [email], (error, result) => {
-    if (error) {
-      res.send({error: error});
-    }
     if(result.length > 0){
-      bcrypt.compare(password, result[0].password, (error, response)=>{
+      bcrypt.compare(password, result[0].password, (error, response) => {
         if(response){
-          req.session.user = result;
-          console.log(req.session.user);
-          res.send(result);
-        }
-        else{
-          res.send({message : "Wrong username / password combination"})
-        }
+          const id = result[0].id;
+          const token = jwt.sign({id}, "jwtSecret", {expiresIn : 300});
+          res.json({auth : true, token : token, result : result});
+        }else {
+          res.json({auth : false, message : "Wrong username/password combination"});
+        };
       })
+    } else{
+      res.json({auth : false, message : "No user exists"});
     }
-    else{
-      res.status(401).json({error : 'Wrong username/password combination'});
-    }
-
-  })
-
-  // app.get("/login", (req, res) => {
-  //   if (req.session.user) {
-  //     res.send({ loggedIn: true, user: req.session.user });
-  //   } else {
-  //     res.send({ loggedIn: false });
-  //   }
-  // });
-  
-  // db.query(query, [email, password], (error, result) => {
-  //   if(error) {
-  //     console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
-  //     res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
-  //     return;
-  //   }
-  //   if(result.length > 0){
-  //     res.send(result);
-  //   }
-  //   else{
-  //     res.status(401).json({error : 'Wrong username/password combination'});
-  //   }
-  // })
+  });
 });
 
 
+/*Before JWT*/
+
+// app.post('/login', async function(req, res) {
+
+//   if (!req.body || !req.body.email || !req.body.password) {
+//     res.status(400).json({ error: 'Missing email or password.' });
+//     return;
+//   }
+
+//   const email = req.body.email;
+//   const password = req.body.password;
+  
+
+//   db.execute("SELECT * FROM user WHERE email = ?", [email], async (error, result) => {
+//     if (error) {
+//       console.error('Error executing database query:', error);
+//       res.status(500).json({ error: 'Internal Server Error' });
+//       return;
+//     }
+
+//     if(result.length > 0){
+//       try{
+//         const passwordMatch = await bcrypt.compare(password, result[0].password);
+//         console.log('Password from user', password, "Password from bdd : ", result[0].password);
+//         console.log('Password match:', passwordMatch);
+//         if(passwordMatch){
+          
+//           req.session.user = result;
+//           console.log(req.session.user);
+//           res.send(result);
+
+
+//         }else {
+//           res.status(401).json({ message: 'Wrong username/password combination' });
+//         };
+//       } catch(err){
+//         res.status(401).json({error : 'Wrong username/password combination'});
+//       }
+//     }
+//   });
+// });
+
 app.listen(PORT, function() {
-    console.log('Restful API is running on PORT', PORT);
-   });
+  console.log('Restful API is running on PORT', PORT);
+ });
