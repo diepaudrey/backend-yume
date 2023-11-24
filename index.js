@@ -126,7 +126,7 @@ const verifyJWT = (req, res, next) => {
         console.log(err);
         res.status(403).json({auth : false, message :" You failed to authenticate"});
       }else{
-        req.userId = decoded.id; //ICI ??? userId ???
+        req.userId = decoded.id; 
         next();
       }
     })
@@ -136,7 +136,6 @@ const verifyJWT = (req, res, next) => {
 app.get('/isUserAuth', verifyJWT, (req, res) => {
   res.send("You are authenticated ! ");
 })
-
 
 
 app.post('/login', (req, res) => {
@@ -154,8 +153,13 @@ app.post('/login', (req, res) => {
       bcrypt.compare(password, result[0].password, (error, response) => {
         if(response){
           const id = result[0].id;
+          const email = result[0].email;
+          const firstName = result[0].first_name;
+          const lastName = result[0].last_name;
+
           const token = jwt.sign({id}, "jwtSecret", {expiresIn : 300});
-          res.json({auth : true, token : token, result : result});
+          const userInfo = {id, email, firstName, lastName};
+          res.json({auth : true, token : token, result : userInfo});
         }else {
           res.json({auth : false, message : "Wrong username/password combination"});
         };
@@ -166,48 +170,6 @@ app.post('/login', (req, res) => {
   });
 });
 
-
-/*Before JWT*/
-
-// app.post('/login', async function(req, res) {
-
-//   if (!req.body || !req.body.email || !req.body.password) {
-//     res.status(400).json({ error: 'Missing email or password.' });
-//     return;
-//   }
-
-//   const email = req.body.email;
-//   const password = req.body.password;
-  
-
-//   db.execute("SELECT * FROM user WHERE email = ?", [email], async (error, result) => {
-//     if (error) {
-//       console.error('Error executing database query:', error);
-//       res.status(500).json({ error: 'Internal Server Error' });
-//       return;
-//     }
-
-//     if(result.length > 0){
-//       try{
-//         const passwordMatch = await bcrypt.compare(password, result[0].password);
-//         console.log('Password from user', password, "Password from bdd : ", result[0].password);
-//         console.log('Password match:', passwordMatch);
-//         if(passwordMatch){
-          
-//           req.session.user = result;
-//           console.log(req.session.user);
-//           res.send(result);
-
-
-//         }else {
-//           res.status(401).json({ message: 'Wrong username/password combination' });
-//         };
-//       } catch(err){
-//         res.status(401).json({error : 'Wrong username/password combination'});
-//       }
-//     }
-//   });
-// });
 
 app.listen(PORT, function() {
   console.log('Restful API is running on PORT', PORT);
