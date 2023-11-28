@@ -57,7 +57,7 @@ app.get('/daily_questions', function (req, res) {
 
 
 let randomInt = -1;
-cron.schedule('15,20,21,25,30 * * * *' , ()=>{
+cron.schedule('15,20,21,25,30,38 * * * *' , ()=>{
   const query = "SELECT COUNT(*) AS nbQuestions FROM daily_question";
   db.query(query, (error, results) => {
     if(error){
@@ -170,29 +170,44 @@ app.post('/login', (req, res) => {
   });
 });
 
+/*----------Quiz---------*/
+
+let randomIntQuiz = -1;
+cron.schedule('15,20,21,24,25,26,27,30,32,33,34,35,36,37,38,39,40 * * * *' , ()=>{
+  const query = "SELECT COUNT(*) AS nbQuizzes FROM quizzes";
+  db.query(query, (error, results) => {
+    if(error){
+        console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+        return;
+    }
+    const totalQuizzes = results[0].nbQuizzes;
+    randomIntQuiz = Math.floor(Math.random() * totalQuizzes + 1);
+    console.log("QUIZ back randomint :" , randomIntQuiz);
+  })
+})
 
 app.get("/quiz_question", function (req, res) {
-  const query = "SELECT * FROM quiz_question WHERE question_id = 1"; 
+  const query = `SELECT * FROM quiz_question WHERE question_id = ${randomIntQuiz}`; 
   db.query(query, (error, results) => {
     if (error) {
       console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
       res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
       return;
     }
-    console.log(results);
     res.status(200).json(results);
   })
 })
 
+
+
 app.get("/quiz_answers", function (req, res) {
-  const query = "SELECT * FROM quiz_answer WHERE question_id = 1"; 
+  const query = `SELECT * FROM quiz_answer WHERE question_id = ${randomIntQuiz}`; 
   db.query(query, (error, results) => {
     if (error) {
       console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
       res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
       return;
     }
-    console.log(results);
     res.status(200).json(results);
   })
 })
