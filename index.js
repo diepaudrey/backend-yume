@@ -171,6 +171,33 @@ app.post('/login', (req, res) => {
 });
 
 
+app.get("/quiz_question", function (req, res) {
+  const query = "SELECT * FROM quiz_question WHERE question_id = 1"; 
+  db.query(query, (error, results) => {
+    if (error) {
+      console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+      res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+      return;
+    }
+    console.log(results);
+    res.status(200).json(results);
+  })
+})
+
+app.get("/quiz_answers", function (req, res) {
+  const query = "SELECT * FROM quiz_answer WHERE question_id = 1"; 
+  db.query(query, (error, results) => {
+    if (error) {
+      console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+      res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+      return;
+    }
+    console.log(results);
+    res.status(200).json(results);
+  })
+})
+
+
 app.listen(PORT, function() {
   console.log('Restful API is running on PORT', PORT);
  });
