@@ -42,6 +42,26 @@ db.connect((err) => {
   }
 });
 
+const verifyJWT = (req, res, next) => {
+  const token = req.headers["x-access-token"]; 
+  console.log('Verif token : ', token)
+
+  if(!token){
+    res.status(401).json({ message: 'Access token required' });
+  } else{
+    jwt.verify(token, "jwtSecret", (err, decoded)=>{
+      if(err){
+        console.log(err);
+        res.status(403).json({auth : false, message :" You failed to authenticate"});
+      }else{
+        req.userId = decoded.id; 
+        next();
+      }
+    })
+  }
+}
+
+
 /* Daily Questions */
 app.get('/daily_questions', function (req, res) {
     const query = "SELECT * FROM daily_question";
@@ -55,9 +75,9 @@ app.get('/daily_questions', function (req, res) {
   });
 });
 
-
-let randomInt = -1;
-cron.schedule('15,20,21,25,30,38 * * * *' , ()=>{
+/*Useful when the app is always running */
+randomInt = -1;
+cron.schedule('00,05,10,15,20,25,30,35,40,45,50,55 * * * *' , ()=>{
   const query = "SELECT COUNT(*) AS nbQuestions FROM daily_question";
   db.query(query, (error, results) => {
     if(error){
@@ -70,19 +90,62 @@ cron.schedule('15,20,21,25,30,38 * * * *' , ()=>{
   })
 })
 
-console.log("back randomint currently used:" , randomInt);
+function DQ_randomInt(){
+  return new Promise((resolve, reject) => {
+    const query = "SELECT COUNT(*) AS nbQuestions FROM daily_question";
+    db.query(query, (error, results) => {
+      if(error){
+          console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+          reject(error);
+          return;
+      }
+      const totalQuestions = results[0].nbQuestions;
+      const randomInt = Math.floor(Math.random() * totalQuestions + 1);
+      console.log("back randomint :" , randomInt);
+      resolve(randomInt);
+    })
+  })
+}
 
-app.get('/daily_question', function (req, res) {
+app.get('/daily_question', async function (req, res) {
+  try{
+  //const randomInt = await DQ_randomInt()
   const query = `SELECT * FROM daily_question WHERE id=${randomInt}`;
   db.query(query, (error, results) => {
-  if (error) {
-    console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
-    res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+    if (error) {
+      console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+      res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+      return;
+    }
+      res.status(200).json(results);
+  });
+  } catch(error){
+      console.error("Erreur lors de la récupération du nombre aléatoire :", error);
+      res.status(500).json({ error: 'Erreur lors de la récupération du nombre aléatoire.' }); 
+  }
+});
+
+
+app.post('/daily_answer', verifyJWT, function (req, res) {
+  if (!req.body) {
+    res.status(400).json({ error: 'Empty body.' });
     return;
   }
-  res.status(200).json(results);
-});
-});
+  const questionId = randomInt;
+  const userId = req.userId;
+
+  db.execute(
+    "INSERT INTO daily_answer (id_question, id_user, answer) VALUES (?, ?, ?)", [questionId, userId, req.body.answer], (error, result) => {
+      if (error) {
+        console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+        res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+        return;
+      }
+      res.status(200).json(result);
+    }
+  )
+
+})
 
 /* Login & Sign up */
 
@@ -115,24 +178,6 @@ app.post('/signup', function(req, res) {
 
 /* ------------- JWT AUTH ---------------*/
 
-const verifyJWT = (req, res, next) => {
-  const token = req.headers["x-access-token"]; 
-
-  if(!token){
-    res.status(401).json({ message: 'Access token required' });
-  } else{
-    jwt.verify(token, "jwtSecret", (err, decoded)=>{
-      if(err){
-        console.log(err);
-        res.status(403).json({auth : false, message :" You failed to authenticate"});
-      }else{
-        req.userId = decoded.id; 
-        next();
-      }
-    })
-  }
-}
-
 app.get('/isUserAuth', verifyJWT, (req, res) => {
   res.send("You are authenticated ! ");
 })
@@ -157,7 +202,7 @@ app.post('/login', (req, res) => {
           const firstName = result[0].first_name;
           const lastName = result[0].last_name;
 
-          const token = jwt.sign({id}, "jwtSecret", {expiresIn : 300});
+          const token = jwt.sign({id}, "jwtSecret", {expiresIn : '24h'});
           const userInfo = {id, email, firstName, lastName};
           res.json({auth : true, token : token, result : userInfo});
         }else {
@@ -172,8 +217,8 @@ app.post('/login', (req, res) => {
 
 /*----------Quiz---------*/
 
-let randomIntQuiz = -1;
-cron.schedule('15,20,21,24,25,26,27,30,32,33,34,35,36,37,38,39,40 * * * *' , ()=>{
+let randomIntQuiz = 1;
+cron.schedule('30 * * * *' , ()=>{
   const query = "SELECT COUNT(*) AS nbQuizzes FROM quizzes";
   db.query(query, (error, results) => {
     if(error){
@@ -186,31 +231,110 @@ cron.schedule('15,20,21,24,25,26,27,30,32,33,34,35,36,37,38,39,40 * * * *' , ()=
   })
 })
 
-app.get("/quiz_question", function (req, res) {
-  const query = `SELECT * FROM quiz_question WHERE question_id = ${randomIntQuiz}`; 
-  db.query(query, (error, results) => {
-    if (error) {
-      console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
-      res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
-      return;
-    }
-    res.status(200).json(results);
-  })
-})
+app.get("/quiz", function (req, res) {
+  console.log("id quiz : ", randomIntQuiz);
+  const queryQuestions = `SELECT * FROM quiz_question WHERE quiz_id=${randomIntQuiz}`;
+  const queryAnswers = "SELECT * FROM quiz_answer";
+
+  // Utilisation de Promise.all pour exécuter les deux requêtes en parallèle
+  Promise.all([
+    new Promise((resolve, reject) => {
+      db.query(queryQuestions, (error, questionsResults) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(questionsResults);
+        }
+      });
+    }),
+    new Promise((resolve, reject) => {
+      db.query(queryAnswers, (error, answersResults) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(answersResults);
+        }
+      });
+    }),
+  ])
+    .then(([questionsResults, answersResults]) => {
+      // Construire la réponse souhaitée en combinant les questions et les réponses
+      const responseData = questionsResults.map((question) => {
+        return {
+          question_id: question.question_id,
+          question_text: question.question_text,
+          answers: answersResults
+            .filter((answer) => answer.question_id === question.question_id)
+            .map((filteredAnswer) => {
+              return {
+                answer_id: filteredAnswer.answer_id,
+                answer_text: filteredAnswer.answer_text,
+              };
+            }),
+        };
+      });
+      res.status(200).json(responseData);
+    })
+    .catch((error) => {
+      console.error("Erreur lors de l'exécution des requêtes : " + error.stack);
+      res.status(500).json({ error: "Erreur lors de l'exécution des requêtes." });
+    });
+});
+
+
+// app.get("/quiz_questions", function (req, res) {
+//   const query = `SELECT * FROM quiz_question WHERE quiz_id = ${randomIntQuiz}`;
+//   db.query(query, (error, results) => {
+//     if (error) {
+//       console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+//       res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+//       return;
+//     }
+//     console.log("quiz questions : ", results)
+//     res.status(200).json(results);
+//   })
+// })
+
+// app.get("/question_answers", function (req, res) {
+//   const query = `SELECT * FROM quiz_answer WHERE question_id = ${req.body.questionId}`; 
+//   db.query(query, (error, results) => {
+//     if (error) {
+//       console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+//       res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+//       return;
+//     }
+//     res.status(200).json(results);
+//   })
+// })
+
+// app.get("/quiz_answers", function (req, res) {
+//   const query = `SELECT * FROM quiz_answer WHERE question_id = ${randomIntQuiz}`; 
+//   db.query(query, (error, results) => {
+//     if (error) {
+//       console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+//       res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+//       return;
+//     }
+//     res.status(200).json(results);
+//   })
+// })
+
+
+// app.get("/quiz_question", function (req, res) {
+//   const query = `SELECT * FROM quiz_question WHERE question_id = ${randomIntQuiz}`; 
+//   db.query(query, (error, results) => {
+//     if (error) {
+//       console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+//       res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+//       return;
+//     }
+//     res.status(200).json(results);
+//   })
+// })
 
 
 
-app.get("/quiz_answers", function (req, res) {
-  const query = `SELECT * FROM quiz_answer WHERE question_id = ${randomIntQuiz}`; 
-  db.query(query, (error, results) => {
-    if (error) {
-      console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
-      res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
-      return;
-    }
-    res.status(200).json(results);
-  })
-})
+
 
 
 app.listen(PORT, function() {
