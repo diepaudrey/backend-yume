@@ -261,6 +261,7 @@ app.get("/quiz", function (req, res) {
       // Construire la réponse souhaitée en combinant les questions et les réponses
       const responseData = questionsResults.map((question) => {
         return {
+          quiz_id : randomIntQuiz,
           question_id: question.question_id,
           question_text: question.question_text,
           answers: answersResults
@@ -280,6 +281,24 @@ app.get("/quiz", function (req, res) {
       res.status(500).json({ error: "Erreur lors de l'exécution des requêtes." });
     });
 });
+
+app.post('/user_question_answer', verifyJWT, (req, res) => {
+  const query = 'INSERT INTO user_quiz_answers (id_user, id_quiz, id_question, id_answer) VALUES (?, ?, ?, ?)';
+
+  const id_user = req.body.id_user;
+  const id_quiz = req.body.id_quiz;
+  const id_question = req.body.id_question;
+  const id_answer = req.body.id_answer;
+
+  db.query(query,[id_user, id_quiz, id_question, id_answer], (error, result) => {
+      if (error) {
+        console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+        res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+        return;
+      }
+      res.status(200).json(result);
+  })
+})
 
 
 // app.get("/quiz_questions", function (req, res) {
