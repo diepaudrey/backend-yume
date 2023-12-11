@@ -8,6 +8,8 @@ const bcrypt = require('bcrypt');
 const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
+const req = require('express/lib/request');
+
 
 const PORT = process.env.PORT;
 
@@ -26,6 +28,7 @@ const DB_DATABASE = process.env.DB_DATABASE;
 const DB_USERNAME = process.env.DB_USERNAME;
 const DB_PASSWORD = process.env.DB_PASSWORD;
 
+
 //Connection to MySQL database
 const db = mysql.createConnection({
     user: DB_USERNAME,
@@ -42,9 +45,9 @@ db.connect((err) => {
   }
 });
 
+
 const verifyJWT = (req, res, next) => {
   const token = req.headers["x-access-token"]; 
-  console.log('Verif token : ', token)
 
   if(!token){
     res.status(401).json({ message: 'Access token required' });
@@ -62,9 +65,14 @@ const verifyJWT = (req, res, next) => {
 }
 
 
+
+
 /* Daily Questions */
 app.get('/daily_questions', function (req, res) {
-    const query = "SELECT * FROM daily_question";
+    console.log("userId :", req.userId)
+    //const query = "SELECT * FROM daily_question";
+    const query = `SELECT * FROM daily_question LEFT JOIN daily_answer ON daily_question.id=daily_answer.id_question WHERE daily_answer.id_question IS NULL OR daily_answer.id_user!=${req.userId}`
+
     db.query(query, (error, results) => {
     if (error) {
       console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
@@ -76,45 +84,64 @@ app.get('/daily_questions', function (req, res) {
 });
 
 /*Useful when the app is always running */
-randomInt = -1;
-cron.schedule('00,05,10,15,20,25,30,35,40,45,50,55 * * * *' , ()=>{
-  const query = "SELECT COUNT(*) AS nbQuestions FROM daily_question";
-  db.query(query, (error, results) => {
-    if(error){
-        console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
-        return;
-    }
-    const totalQuestions = results[0].nbQuestions;
-    randomInt = Math.floor(Math.random() * totalQuestions + 1);
-    console.log("back randomint :" , randomInt);
-  })
-})
+// let randomInt = -1;
+// cron.schedule('*/2 * * * *' , ()=>{
+//   const query = "SELECT COUNT(*) AS nbQuestions FROM daily_question";
+//   db.query(query, (error, results) => {
+//     if(error){
+//         console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+//         return;
+//     }
+//     const totalQuestions = results[0].nbQuestions;
+//     randomInt = Math.floor(Math.random() * totalQuestions + 1);
+//     console.log("back randomint :" , randomInt);
+//   })
+// })
 
-function DQ_randomInt(){
-  return new Promise((resolve, reject) => {
-    const query = "SELECT COUNT(*) AS nbQuestions FROM daily_question";
-    db.query(query, (error, results) => {
-      if(error){
+
+const getDailyQuestionIndex = async function(req, res) {
+  //Get all the daily questions not answered by the current user
+  
+  try{
+    const query = `SELECT daily_question.id FROM daily_question LEFT JOIN daily_answer ON daily_question.id=daily_answer.id_question WHERE daily_answer.id_question IS NULL OR daily_answer.id_user!=${req.userId}`;
+    return new Promise((resolve, reject) => {
+      db.query(query, (error, results) => {
+        if (error) {
           console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
           reject(error);
+          res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
           return;
-      }
-      const totalQuestions = results[0].nbQuestions;
-      const randomInt = Math.floor(Math.random() * totalQuestions + 1);
-      console.log("back randomint :" , randomInt);
-      resolve(randomInt);
-    })
-  })
+        }
+          const indexArray = results.map((obj)=>obj.id);
+          if (indexArray.length === 0) {
+            //User has answerd to all questions
+            res.status(404).json({ error: 'Aucune question trouvée.' });
+            return;
+          }
+          const randomIndex = Math.floor(Math.random() * indexArray.length);
+          const randomIntQuestion= indexArray[randomIndex];
+          resolve(randomIntQuestion);
+          res.status(200);
+      });
+    });
+    
+    } catch(error){
+      console.error("Erreur lors de la récupération des daily questions :", error);
+      res.status(500).json({ error: 'Erreur lors de la récupération des daily questions.' });
+      throw error;
+    }
+
 }
 
-app.get('/daily_question', async function (req, res) {
+
+app.get('/daily_question', verifyJWT, async function (req, res) {
   try{
-  //const randomInt = await DQ_randomInt()
-  const query = `SELECT * FROM daily_question WHERE id=${randomInt}`;
+  const randIndex = await getDailyQuestionIndex(req,res);
+  const query = `SELECT id,question FROM daily_question WHERE id=${randIndex}`;
   db.query(query, (error, results) => {
     if (error) {
       console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
-      res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+      res.status(500).json({ error: 'Erreur lors de l\'exé  cution de la requête.' });
       return;
     }
       res.status(200).json(results);
@@ -131,7 +158,7 @@ app.post('/daily_answer', verifyJWT, function (req, res) {
     res.status(400).json({ error: 'Empty body.' });
     return;
   }
-  const questionId = randomInt;
+  const questionId = req.body.id_question;
   const userId = req.userId;
 
   db.execute(
@@ -218,21 +245,74 @@ app.post('/login', (req, res) => {
 /*----------Quiz---------*/
 
 let randomIntQuiz = 1;
-cron.schedule('30 * * * *' , ()=>{
-  const query = "SELECT COUNT(*) AS nbQuizzes FROM quizzes";
+cron.schedule('*/1 * * * *' , ()=>{
+  // const query = `SELECT quizzes.quiz_id FROM quizzes LEFT JOIN take_quiz ON quizzes.quiz_id=take_quiz.quiz_id WHERE take_quiz.quiz_id IS NULL AND take_quiz.user_id = 51`;
+  const query = `SELECT quizzes.quiz_id FROM quizzes LEFT JOIN take_quiz ON quizzes.quiz_id=take_quiz.quiz_id WHERE take_quiz.quiz_id IS NULL`;
   db.query(query, (error, results) => {
     if(error){
         console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
         return;
     }
-    const totalQuizzes = results[0].nbQuizzes;
-    randomIntQuiz = Math.floor(Math.random() * totalQuizzes + 1);
-    console.log("QUIZ back randomint :" , randomIntQuiz);
+    const quizArray= results.map((obj) => obj.quiz_id);
+    const randomIndex = Math.floor(Math.random() * quizArray.length);
+    randomIntQuiz= quizArray[randomIndex];
+    console.log("randomIntQuiz : ", randomIntQuiz);
   })
 })
 
+// async function getTotalQuizzes(){
+//   const query = "SELECT COUNT(*) AS nbQuizzes FROM quizzes";
+//   var totalQuizzes;
+//   db.query(query, (error, results) => {
+//     if(error){
+//         console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+//         return;
+//     }
+//     totalQuizzes = results[0].nbQuizzes;
+//   });
+//   return totalQuizzes;
+// }
+
+// async function getRandomInt(totalQuizzes){
+//   return Math.floor(Math.random() * totalQuizzes + 1);
+// }
+
+const getDailyQuizIndex = function(req, res) {
+  //Get a random quiz that user did not answer yet
+  try{
+    const query = `SELECT quizzes.quiz_id FROM quizzes LEFT JOIN take_quiz ON quizzes.quiz_id=take_quiz.quiz_id WHERE take_quiz.quiz_id IS NULL OR take_quiz.user_id!=${req.userId}`;
+    return new Promise((resolve, reject) => {
+      db.query(query, (error, results) => {
+        if (error) {
+          console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+          reject(error);
+          res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+          return;
+        }
+          const indexArray = results.map((obj)=>obj.id);
+          if (indexArray.length === 0) {
+            //User has answerd to all quizzes
+            res.status(404).json({ error: 'No more quizzes left' });
+            return;
+          }
+          const randomIndex = Math.floor(Math.random() * indexArray.length);
+          const randomIntQuiz= indexArray[randomIndex];
+          resolve(randomIntQuiz);
+          res.status(200);
+      });
+    });
+    
+    } catch(error){
+      console.error("Erreur lors de la récupération des daily questions :", error);
+      res.status(500).json({ error: 'Erreur lors de la récupération des daily questions.' });
+      throw error;
+    }
+
+}
+
 app.get("/quiz", function (req, res) {
-  console.log("id quiz : ", randomIntQuiz);
+  //console.log("id quiz : ", randomIntQuiz);
+  //const randomIntQuiz = getDailyQuizIndex(req);
   const queryQuestions = `SELECT * FROM quiz_question WHERE quiz_id=${randomIntQuiz}`;
   const queryAnswers = "SELECT * FROM quiz_answer";
 
@@ -275,6 +355,7 @@ app.get("/quiz", function (req, res) {
         };
       });
       res.status(200).json(responseData);
+      console.log(responseData);
     })
     .catch((error) => {
       console.error("Erreur lors de l'exécution des requêtes : " + error.stack);
@@ -285,7 +366,7 @@ app.get("/quiz", function (req, res) {
 app.post('/user_question_answer', verifyJWT, (req, res) => {
   const query = 'INSERT INTO user_quiz_answers (id_user, id_quiz, id_question, id_answer) VALUES (?, ?, ?, ?)';
 
-  const id_user = req.body.id_user;
+  const id_user = req.userId;
   const id_quiz = req.body.id_quiz;
   const id_question = req.body.id_question;
   const id_answer = req.body.id_answer;
@@ -300,6 +381,22 @@ app.post('/user_question_answer', verifyJWT, (req, res) => {
   })
 })
 
+app.post('/take_quiz', verifyJWT, (req, res) => {
+  const query = 'INSERT INTO take_quiz (user_id, quiz_id, status) VALUES (?, ?, ?)';
+
+  const id_user = req.userId;
+  const id_quiz = req.body.id_quiz;
+  const status = 1;
+
+  db.query(query,[id_user, id_quiz, status], (error, result) => {
+      if (error) {
+        console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+        res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+        return;
+      }
+      res.status(200).json(result);
+  })
+})
 
 // app.get("/quiz_questions", function (req, res) {
 //   const query = `SELECT * FROM quiz_question WHERE quiz_id = ${randomIntQuiz}`;
