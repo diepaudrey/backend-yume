@@ -131,11 +131,27 @@ const getDailyQuestionIndex = async function(req, res) {
 
 }
 
-
 app.get('/daily_question', verifyJWT, async function (req, res) {
   try{
   const randIndex = await getDailyQuestionIndex(req,res);
   const query = `SELECT id,question FROM daily_question WHERE id=${randIndex}`;
+  db.query(query, (error, results) => {
+    if (error) {
+      console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+      res.status(500).json({ error: 'Erreur lors de l\'exé  cution de la requête.' });
+      return;
+    }
+      res.status(200).json(results);
+  });
+  } catch(error){
+      console.error("Erreur lors de la récupération du nombre aléatoire :", error);
+      res.status(500).json({ error: 'Erreur lors de la récupération du nombre aléatoire.' }); 
+  }
+});
+
+app.get('/daily_question/:id', verifyJWT, async function (req, res) {
+  try{
+  const query = `SELECT id,question FROM daily_question WHERE id=${req.params.id}`;
   db.query(query, (error, results) => {
     if (error) {
       console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
@@ -172,6 +188,47 @@ app.post('/daily_answer', verifyJWT, function (req, res) {
 
 })
 
+app.get('/daily_answers', verifyJWT, async function (req, res) {
+    const userId = req.userId
+    const queryAnswers = `SELECT * FROM daily_answer WHERE id_user=${userId}`;
+    const queryQuestions = "SELECT * FROM daily_question";
+
+    Promise.all([
+      new Promise((resolve, reject) => {
+        db.query(queryQuestions, (error,questionsResults)=>{
+          if(error){
+            reject(error);
+          }else{
+            resolve(questionsResults);
+          }
+        })
+      }), 
+
+      new Promise((resolve,reject)=>{
+        db.query(queryAnswers, (error, answersResults) => {
+          if(error){
+            reject(error);
+          } else {
+            resolve(answersResults);
+          }
+        })
+      })
+    ])
+    .then(([questionsResults, answersResults])=>{
+      const responseData = answersResults.map((answer)=>{
+        return {
+          answer : answer.answer,
+          question : questionsResults.filter((question) => answer.id_question === question.id)[0]?.question,
+        }
+      })
+      res.status(200).json(responseData);
+    })
+    .catch((error)=>{
+      console.error("Erreur lors de l'exécution des requêtes : " + error.stack);
+      res.status(500).json({ error: "Erreur lors de l'exécution des requêtes." });
+    })
+});
+
 /* Login & Sign up */
 
 const saltRound = 10;
@@ -198,6 +255,37 @@ app.post('/signup', function(req, res) {
         res.status(200).json(result);
       }
     )
+  })
+})
+
+
+app.post('/last_login', verifyJWT, (req, res) => {
+  const userId = req.userId;
+  const date = req.body.date;
+  const query = `UPDATE user SET last_login=STR_TO_DATE( ?, '%Y/%m/%d') WHERE id = ?`
+
+  db.query(query, [date, userId], (error, result) => {
+    if (error) {
+      console.error('Erreur lors de la mise à jour de la date de dernière connexion : ' + error.stack);
+      res.status(500).json({ error: 'Erreur lors de la mise à jour de la date de dernière connexion.' });
+    } else {
+      res.status(200).json({ success: true });
+    }
+  })
+
+})
+
+app.get('/last_login', verifyJWT, (req, res) => {
+  const userId = req.userId;
+  const query = "SELECT DATE_FORMAT(last_login, '%Y/%m/%d') AS last_login FROM user WHERE id = ?";
+  db.query(query, [userId], (error, result) => {
+    if(error){
+      console.error('Error to get the last login date : ' + error.stack);
+      res.status(500).json({error : 'Error to get the last login date '})
+    }
+    else{
+      res.status(200).json(result);
+    }
   })
 })
 
@@ -242,39 +330,6 @@ app.post('/login', (req, res) => {
 
 /*----------Quiz---------*/
 
-// let randomIntQuiz = 1;
-// cron.schedule('*/30 * * * *' , ()=>{
-//   // const query = `SELECT quizzes.quiz_id FROM quizzes LEFT JOIN take_quiz ON quizzes.quiz_id=take_quiz.quiz_id WHERE take_quiz.quiz_id IS NULL AND take_quiz.user_id = 51`;
-//   const query = `SELECT quizzes.quiz_id FROM quizzes LEFT JOIN take_quiz ON quizzes.quiz_id=take_quiz.quiz_id WHERE take_quiz.quiz_id IS NULL`;
-//   db.query(query, (error, results) => {
-//     if(error){
-//         console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
-//         return;
-//     }
-//     const quizArray= results.map((obj) => obj.quiz_id);
-//     const randomIndex = Math.floor(Math.random() * quizArray.length);
-//     randomIntQuiz= quizArray[randomIndex];
-//     console.log("randomIntQuiz : ", randomIntQuiz);
-//   })
-// })
-
-// async function getTotalQuizzes(){
-//   const query = "SELECT COUNT(*) AS nbQuizzes FROM quizzes";
-//   var totalQuizzes;
-//   db.query(query, (error, results) => {
-//     if(error){
-//         console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
-//         return;
-//     }
-//     totalQuizzes = results[0].nbQuizzes;
-//   });
-//   return totalQuizzes;
-// }
-
-// async function getRandomInt(totalQuizzes){
-//   return Math.floor(Math.random() * totalQuizzes + 1);
-// }
-
 const getDailyQuizIndex = async function(req, res) {
   //Get a random quiz that user did not answer yet
   try{
@@ -287,7 +342,6 @@ const getDailyQuizIndex = async function(req, res) {
           res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
           return;
         }
-
           const indexArray = results.map((obj)=>obj.quiz_id);
           if (indexArray.length === 0) {
             //User has answerd to all quizzes
@@ -296,6 +350,7 @@ const getDailyQuizIndex = async function(req, res) {
           }
           const randomIndex = Math.floor(Math.random() * indexArray.length);
           const randomIntQuiz= indexArray[randomIndex];
+          
           resolve(randomIntQuiz);
           res.status(200);
       });
@@ -307,10 +362,9 @@ const getDailyQuizIndex = async function(req, res) {
       throw error;
     }
 
-}
+};
 
 app.get("/quiz", verifyJWT, async function (req, res) {
-  
   const randomIntQuiz = await getDailyQuizIndex(req, res);
   console.log("id quiz : ", randomIntQuiz);
   const queryQuestions = `SELECT * FROM quiz_question WHERE quiz_id=${randomIntQuiz}`;
@@ -450,6 +504,67 @@ app.post('/take_quiz', verifyJWT, (req, res) => {
       res.status(200).json(result);
   })
 })
+
+app.get('/is_quiz_answered/:id', verifyJWT, (req, res) => {
+  const userId = req.params.id;
+  const query = `SELECT * FROM take_quiz WHERE user_id = ?`
+  db.query(query, [userId] ,(error, result) => {
+    if(error){
+      console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+      res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
+    }
+    else{
+      if (result.length > 0) {
+        res.status(200).json({ isAnswered: true });
+      } else {
+        res.status(200).json({ isAnswered: false });
+      }
+    }
+  })
+
+})
+
+app.get('/quiz_answers', verifyJWT, async function (req, res) {
+  const userId = req.userId
+  const queryAnswers = `SELECT * FROM user_quiz_answers LEFT JOIN quiz_answer ON user_quiz_answers.id_answer=quiz_answer.answer_id WHERE user_quiz_answers.id_user =${userId}`;
+  const queryQuestions = "SELECT * FROM quiz_question";
+
+  Promise.all([
+    new Promise((resolve, reject) => {
+      db.query(queryQuestions, (error,questionsResults)=>{
+        if(error){
+          reject(error);
+        }else{
+          resolve(questionsResults);
+        }
+      })
+    }), 
+
+    new Promise((resolve,reject)=>{
+      db.query(queryAnswers, (error, answersResults) => {
+        if(error){
+          reject(error);
+        } else {
+          resolve(answersResults);
+        }
+      })
+    })
+  ])
+  .then(([questionsResults, answersResults])=>{
+    const responseData = answersResults.map((answer)=>{
+      return {
+        answer : answer.answer_text,
+        question : questionsResults.filter((question) => answer.id_question === question.question_id)[0]?.question_text,
+      }
+    })
+    console.log(responseData)
+    res.status(200).json(responseData);
+  })
+  .catch((error)=>{
+    console.error("Erreur lors de l'exécution des requêtes : " + error.stack);
+    res.status(500).json({ error: "Erreur lors de l'exécution des requêtes." });
+  })
+});
 
 
 app.listen(PORT, function() {
