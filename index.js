@@ -266,8 +266,8 @@ app.post('/last_login', verifyJWT, (req, res) => {
 
   db.query(query, [date, userId], (error, result) => {
     if (error) {
-      console.error('Erreur lors de la mise à jour de la date de dernière connexion : ' + error.stack);
-      res.status(500).json({ error: 'Erreur lors de la mise à jour de la date de dernière connexion.' });
+      console.error('Error during last login update date: ' + error.stack);
+      res.status(500).json({ error: 'Error during last login update date' });
     } else {
       res.status(200).json({ success: true });
     }
@@ -284,6 +284,36 @@ app.get('/last_login', verifyJWT, (req, res) => {
       res.status(500).json({error : 'Error to get the last login date '})
     }
     else{
+      res.status(200).json(result);
+    }
+  })
+})
+
+
+app.post('/user_description', verifyJWT, (req, res) => {
+  const userId= req.userId;
+  const description = req.body.description;
+  console.log(description);
+
+  const query = `UPDATE user SET user.description=? WHERE user.id=?`
+  db.query(query, [description, userId], (error, result) => {
+    if (error) {
+      console.error('Error to post user description : ' + error.stack);
+      res.status(500).json({ error: 'Error to post user description' });
+    } else {
+      res.status(200).json({ success: true });
+    }
+  })
+})
+
+app.get('/user_description', verifyJWT, (req, res) => {
+  const userId = req.userId;
+  const query = `SELECT * FROM user WHERE user.id=?`;
+  db.query(query,[userId], (error, result) => {
+    if (error) {
+      console.error('Error to get user description : ' + error.stack);
+      res.status(500).json({ error: 'Error to get user description' });
+    } else {
       res.status(200).json(result);
     }
   })
