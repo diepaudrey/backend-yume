@@ -397,6 +397,7 @@ const getDailyQuizIndex = async function(req, res) {
 app.get("/quiz", verifyJWT, async function (req, res) {
   const randomIntQuiz = await getDailyQuizIndex(req, res);
   console.log("id quiz : ", randomIntQuiz);
+  const queryUpdateQuizIndex = `UPDATE user SET daily_quiz_id = ${randomIntQuiz} WHERE id=${req.userId}`
   const queryQuestions = `SELECT * FROM quiz_question WHERE quiz_id=${randomIntQuiz}`;
   const queryAnswers = "SELECT * FROM quiz_answer";
 
@@ -417,6 +418,15 @@ app.get("/quiz", verifyJWT, async function (req, res) {
           reject(error);
         } else {
           resolve(answersResults);
+        }
+      });
+    }),
+    new Promise((resolve, reject) => {
+      db.query(queryUpdateQuizIndex, (error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve({success: true});
         }
       });
     }),
@@ -498,6 +508,69 @@ app.get("/quiz_by_id/:id", verifyJWT, async (req, res) => {
     });
 });
 
+
+
+app.get('/daily_quiz', verifyJWT, (req, res) => {
+  const queryDailyQuizId = `SELECT daily_quiz_id from user WHERE id = ${req.userId}`
+  const queryQuestions = `SELECT * FROM quiz_question WHERE quiz_id= ?`;
+  const queryAnswers = "SELECT * FROM quiz_answer";
+
+  db.query(queryDailyQuizId, (err, results) => {
+    if(err){
+      return res.status(500).json({error : "Error while getting the daily quiz id"})
+    }
+
+    const dailyQuizId = results[0].daily_quiz_id;
+
+  // Utilisation de Promise.all pour exécuter les deux requêtes en parallèle
+    Promise.all([
+      new Promise((resolve, reject) => {
+        db.query(queryQuestions,[dailyQuizId],(error, questionsResults) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(questionsResults);
+          }
+        });
+      }),
+      new Promise((resolve, reject) => {
+        db.query(queryAnswers, (error, answersResults) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(answersResults);
+          }
+        });
+      }),
+    ])
+      .then(([questionsResults, answersResults]) => {
+        // Construire la réponse souhaitée en combinant les questions et les réponses
+        const responseData = questionsResults.map((question) => {
+          return {
+            quiz_id : dailyQuizId,
+            question_id: question.question_id,
+            question_text: question.question_text,
+            answers: answersResults
+              .filter((answer) => answer.question_id === question.question_id)
+              .map((filteredAnswer) => {
+                return {
+                  answer_id: filteredAnswer.answer_id,
+                  answer_text: filteredAnswer.answer_text,
+                };
+              }),
+          };
+        });
+        res.status(200).json(responseData);
+
+      })
+      .catch((error) => {
+        console.error("Erreur lors de l'exécution des requêtes : " + error.stack);
+        res.status(500).json({ error: "Erreur lors de l'exécution des requêtes." });
+      });
+  })
+  
+})
+
 app.post('/user_question_answer', verifyJWT, (req, res) => {
   const query = 'INSERT INTO user_quiz_answers (id_user, id_quiz, id_question, id_answer) VALUES (?, ?, ?, ?)';
 
@@ -536,9 +609,10 @@ app.post('/take_quiz', verifyJWT, (req, res) => {
 })
 
 app.get('/is_quiz_answered/:id', verifyJWT, (req, res) => {
-  const userId = req.params.id;
-  const query = `SELECT * FROM take_quiz WHERE user_id = ?`
-  db.query(query, [userId] ,(error, result) => {
+  const quizId = req.params.id;
+  const userId = req.userId;
+  const query = `SELECT * FROM take_quiz WHERE user_id = ? AND quiz_id = ?`
+  db.query(query, [userId, quizId] ,(error, result) => {
     if(error){
       console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
       res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
