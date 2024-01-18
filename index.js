@@ -132,38 +132,114 @@ const getDailyQuestionIndex = async function(req, res) {
 }
 
 app.get('/daily_question', verifyJWT, async function (req, res) {
-  try{
   const randIndex = await getDailyQuestionIndex(req,res);
-  const query = `SELECT id,question FROM daily_question WHERE id=${randIndex}`;
-  db.query(query, (error, results) => {
-    if (error) {
-      console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
-      res.status(500).json({ error: 'Erreur lors de l\'exé  cution de la requête.' });
-      return;
-    }
-      res.status(200).json(results);
+  const query = `SELECT id,question FROM daily_question WHERE id=${randIndex}`
+  const updateQuery = `UPDATE user SET daily_question_id=${randIndex} WHERE id=${req.userId}`;
+
+  Promise.all([
+    new Promise((resolve,reject)=>{
+      db.query(updateQuery, (error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve({success: true});
+        }
+      });
+    }),
+    new Promise((resolve, reject) => {
+      db.query(query, (error, dailyQuestion) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(dailyQuestion);
+        }
+      });
+    }),
+  ]).then((dailyQuestion) => {
+    res.status(200).json(dailyQuestion[1])
+  }).catch((error) => {
+    console.error("Error fetching daily question :", error);
+      res.status(500).json({ error: 'Error fetching daily question.' }); 
   });
-  } catch(error){
-      console.error("Erreur lors de la récupération du nombre aléatoire :", error);
-      res.status(500).json({ error: 'Erreur lors de la récupération du nombre aléatoire.' }); 
-  }
 });
 
-app.get('/daily_question/:id', verifyJWT, async function (req, res) {
-  try{
-  const query = `SELECT id,question FROM daily_question WHERE id=${req.params.id}`;
-  db.query(query, (error, results) => {
-    if (error) {
+app.get('/is_question_answered/:id', verifyJWT, (req, res) => {
+  const questionId = req.params.id;
+  const userId = req.userId;
+  const query = `SELECT * FROM daily_answer WHERE id_user = ? AND id_question = ?`
+  db.query(query, [userId, questionId] ,(error, result) => {
+    if(error){
       console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
-      res.status(500).json({ error: 'Erreur lors de l\'exé  cution de la requête.' });
-      return;
+      res.status(500).json({ error: 'Erreur lors de l\'exécution de la requête.' });
     }
-      res.status(200).json(results);
-  });
-  } catch(error){
-      console.error("Erreur lors de la récupération du nombre aléatoire :", error);
-      res.status(500).json({ error: 'Erreur lors de la récupération du nombre aléatoire.' }); 
-  }
+    else{
+      if (result.length > 0) {
+        res.status(200).json({ isAnswered: true });
+      } else {
+        res.status(200).json({ isAnswered: false });
+      }
+    }
+  })
+
+})
+
+app.get('/daily_question_id', verifyJWT, async function (req, res) {
+  const queryDailyQuestionId = `SELECT daily_question_id FROM user WHERE id = ${req.userId}`
+  const query = `SELECT id,question FROM daily_question WHERE id=?`;
+  
+  db.query(queryDailyQuestionId, (error, result) => {
+    if(error){
+      return res.status(500).json({error : "Error while getting user daily question id"})
+    }
+    console.log(result)
+    const dailyQuestionId = result[0].daily_question_id;
+
+    new Promise((resolve, reject) => {
+      db.query(query, [dailyQuestionId], (error, dailyQuestion) =>{
+        if(error){
+          reject(error)
+        }else{
+          
+          resolve(dailyQuestion)
+        }
+      })
+    }).then((dailyQ) => {
+      res.status(200).json(dailyQ)
+    }).catch((error) => {
+      console.error("Error fetching daily question :", error);
+        res.status(500).json({ error: 'Error fetching daily question.' }); 
+    });
+  })
+  // try{
+  // const queryDailyQuestionId = `SELECT daily_question_id FROM user WHERE id = ${req.userId}`
+  // const query = `SELECT id,question FROM daily_question WHERE id=?`;
+  // Promise.all([
+  //   new Promise((resolve, reject) => {
+  //     db.query(queryDailyQuestionId, (error, dailyQuestionId) =>{
+  //       if(error){
+  //         reject(error)
+  //       }else{
+  //         console.log('dailyquestionid :', dailyQuestionId)
+  //         resolve(dailyQuestionId)
+  //       }
+  //     })
+  //   }),
+  //   new Promise((resolve, reject) => {
+  //     db.query(query, [])
+  //   })
+  // ])
+  // db.query(query, (error, results) => {
+  //   if (error) {
+  //     console.error('Erreur lors de l\'exécution de la requête : ' + error.stack);
+  //     res.status(500).json({ error: 'Erreur lors de l\'exé  cution de la requête.' });
+  //     return;
+  //   }
+  //     res.status(200).json(results);
+  // });
+  // } catch(error){
+  //     console.error("Erreur lors de la récupération du nombre aléatoire :", error);
+  //     res.status(500).json({ error: 'Erreur lors de la récupération du nombre aléatoire.' }); 
+  // }
 });
 
 
@@ -229,7 +305,7 @@ app.get('/daily_answers', verifyJWT, async function (req, res) {
     })
 });
 
-/* Login & Sign up */
+/*---------Login & Sign up-------------*/
 
 const saltRound = 10;
 
